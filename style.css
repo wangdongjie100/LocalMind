@@ -1,0 +1,24 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f8f9fa;
+    margin: 0;
+    padding: 0;
+}
+
+.gr-button {
+    background-color: #007bff;
+    color: white;
+    border-radius: 5px;
+    padding: 10px 20px;
+    border: none;
+    cursor: pointer;
+}
+
+.gr-button:hover {
+    background-color: #0056b3;
+}
+
+.chatbox {
+    flex: 1; /* 聊天框占据最大高度 */
+    overflow-y: auto; /* 添加滚动支持 */
+}

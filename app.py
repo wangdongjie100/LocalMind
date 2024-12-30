@@ -1,12 +1,14 @@
 import gradio as gr
 import os
 import json
-from llm_logic import initialize_llm_chain,ask_question_with_chain
+from llm_logic import initialize_llm, answer_generation_using_message, answer_generation_using_file_and_message
+from utils import file_load,retriver_prepare
 
 # Global state
 chat_history = []
-model_settings = {"temperature": 0.7, "max_tokens": 100, "model": "llama3.2"}
-llm_chain = initialize_llm_chain(model_settings["model"], model_settings["temperature"], model_settings["max_tokens"])
+model_settings = {"temperature": 0.7, "max_tokens": 100, "model": "qwen2.5"}
+llm = initialize_llm(model_settings["model"], model_settings["temperature"], model_settings["max_tokens"])
+retriver = None
 
 # Retrieve the list of Ollama models
 def get_ollama_models():
@@ -29,10 +31,17 @@ def get_ollama_models():
 
 # Chat functionality
 def chatbot(input_text):
-    global chat_history
-    reply = ask_question_with_chain(llm_chain,input_text)
-    chat_history.append(("User", input_text))
-    chat_history.append(("ChatBot", reply))
+    global chat_history, retriver
+    if retriver != None:
+        docs = retriver.invoke(input_text)
+        context = docs[0].page_content
+        reply = answer_generation_using_file_and_message(llm,context,input_text)
+        chat_history.append(("User", input_text))
+        chat_history.append(("ChatBot", reply))
+    else:
+        reply = answer_generation_using_message(llm,input_text)
+        chat_history.append(("User", input_text))
+        chat_history.append(("ChatBot", reply))
     return chat_history, ""
 
 # Update model settings
@@ -40,12 +49,15 @@ def update_settings(temperature, max_tokens, model_name):
     model_settings["temperature"] = temperature
     model_settings["max_tokens"] = max_tokens
     model_settings["model"] = model_name
-    global llm_chain 
-    llm_chain = initialize_llm_chain(model_settings["model"], model_settings["temperature"], model_settings["max_tokens"])
+    global llm 
+    llm = initialize_llm(model_settings["model"], model_settings["temperature"], model_settings["max_tokens"])
     return f"Settings Updated: Temp={temperature}, MaxTokens={max_tokens}, Model={model_name}"
 
 # Handle file uploads
 def handle_file(file):
+    contents = file_load(file)
+    global retriver
+    retriver = retriver_prepare(contents,k=2)
     return f"File '{file.name}' uploaded successfully!"
 
 def create_gradio_interface():

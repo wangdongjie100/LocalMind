@@ -1,59 +1,35 @@
 from langchain_ollama.llms import OllamaLLM
 from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+from langchain_core.messages import HumanMessage, SystemMessage
 
-def initialize_llm_chain(model_name="llama3.2", temperature=0.7, max_tokens=150):
-    """
-    Initialize LangChain's LLM Chain based on the Ollama model.
 
-    Parameters:
-    - model_name (str): The model name, e.g., "llama2".
-    - temperature (float): The randomness of the model's generation, range [0, 1].
-    - max_tokens (int): The maximum number of output tokens.
 
-    Returns:
-    - LLMChain instance.
-    """
+def initialize_llm(model_name="llama3.2", temperature=0.7, max_tokens=150):
     # Initialize the Ollama model
     llm = OllamaLLM(model=model_name, temperature=temperature, max_tokens=max_tokens)
-    
-    # Define the prompt template
-    prompt = PromptTemplate(
-        input_variables=["question"],
-        template="You are a helpful assistant. Answer the question: {question}"
-    )
-    
-    # Create the LLM Chain
-    chain = prompt | llm
-    return chain
+    return llm
 
-def ask_question_with_chain(chain, question):
-    """
-    Use the initialized LLM Chain to answer a question.
+def answer_generation_using_message(llm, message):
+    prompt = """You are an helpful assistant for question-answering tasks. 
+        Now, review the user question: {question}
+        Think carefully about the question. Provide an accurate answer to this question. 
+        Use concise, clear and easy to understand way to write the sentences.
+        Answer: """
+    prompt_formatted = prompt.format(question=message)
+    generation = llm.invoke([HumanMessage(content=prompt_formatted)])
+    return generation
 
-    Parameters:
-    - chain (LLMChain): The initialized LLMChain instance.
-    - question (str): The user's question.
+def answer_generation_using_file_and_message(llm, context, message):
+    prompt = """You are an assistant for question-answering tasks. 
+            Here is the context to use to answer the question:
+            {context} 
+            Think carefully about the above context. 
+            Now, review the user question:
+            {question}
+            Provide an answer to this questions using only the above context. 
+            Keep the answer concise and easy to understand.
+            Answer:"""
+    prompt_formatted = prompt.format(context=context,question=message)
+    generation = llm.invoke([HumanMessage(content=prompt_formatted)])
+    return generation
 
-    Returns:
-    - str: The model's response.
-    """
-    response = chain.invoke({"question":question})
-    return response
-
-# Example: Using the utility functions
-if __name__ == "__main__":
-    # Initialize the LLM Chain
-    model_settings = {
-        "model_name": "llama3.2",
-        "temperature": 0.7,
-        "max_tokens": 150
-    }
-    chain = initialize_llm_chain(**model_settings)
-
-    # Ask a question
-    question = "What is the capital of France?"
-    answer = ask_question_with_chain(chain, question)
-
-    print(f"Question: {question}")
-    print(f"Answer: {answer}")

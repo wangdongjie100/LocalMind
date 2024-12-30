@@ -1,21 +1,18 @@
 import gradio as gr
+import time
 import os
 import json
-from llm_logic import initialize_llm, answer_generation_using_message, answer_generation_using_file_and_message
-from utils import file_load,retriver_prepare
 
-# Global state
-chat_history = []
-model_settings = {"temperature": 0.7, "max_tokens": 100, "model": "qwen2.5"}
-llm = initialize_llm(model_settings["model"], model_settings["temperature"], model_settings["max_tokens"])
-retriver = None
+from llm_logic import *
 
-# Retrieve the list of Ollama models
+llm = None
+
+# Function to fetch available models using the 'ollama' command
 def get_ollama_models():
     try:
         # Execute the command to fetch model list
         raw_output = os.popen("ollama list").read()
-        
+
         # Split the output into lines
         lines = raw_output.splitlines()
 
@@ -28,116 +25,95 @@ def get_ollama_models():
         return ["Error: Unable to parse 'ollama list' output as JSON."]
     except Exception as e:
         return [f"Error: {str(e)}"]
+    
 
-# Chat functionality
-def chatbot(input_text):
-    global chat_history, retriver
-    if retriver != None:
-        docs = retriver.invoke(input_text)
-        context = docs[0].page_content
-        reply = answer_generation_using_file_and_message(llm,context,input_text)
-        chat_history.append(("User", input_text))
-        chat_history.append(("ChatBot", reply))
-    else:
-        reply = answer_generation_using_message(llm,input_text)
-        chat_history.append(("User", input_text))
-        chat_history.append(("ChatBot", reply))
-    return chat_history, ""
+def apply_settings(temp, tokens, model_name):
+    global llm
+    llm = initialize_llm(model_name, temp, tokens)
+    return f"✅ Settings Applied!"
 
-# Update model settings
-def update_settings(temperature, max_tokens, model_name):
-    model_settings["temperature"] = temperature
-    model_settings["max_tokens"] = max_tokens
-    model_settings["model"] = model_name
-    global llm 
-    llm = initialize_llm(model_settings["model"], model_settings["temperature"], model_settings["max_tokens"])
-    return f"Settings Updated: Temp={temperature}, MaxTokens={max_tokens}, Model={model_name}"
+def reset_button_text(button):
+    import time
+    time.sleep(3)  # Wait for 3 seconds
+    return button
+    
 
-# Handle file uploads
-def handle_file(file):
-    contents = file_load(file)
-    global retriver
-    retriver = retriver_prepare(contents,k=2)
-    return f"File '{file.name}' uploaded successfully!"
+# Chatbot demo with multimodal input (text, markdown, LaTeX, code blocks, image, audio, & video). Plus shows support for streaming text.
 
-def create_gradio_interface():
-    # Build Gradio interface
-    with gr.Blocks (css="""
-                    .equal-height {
-                        display: flex;
-                        align-items: stretch; /* Ensure equal height for both columns */
-                    }
+def print_like_dislike(x: gr.LikeData):
+    print(x.index, x.value, x.liked)
 
-                    .column {
-                        flex: 1; /* Allow columns to stretch in width */
-                        display: flex;
-                        flex-direction: column;
-                    }
+def add_message(history, message):
+    for x in message["files"]:
+        history.append({"role": "user", "content": {"path": x}})
+    if message["text"] is not None:
+        history.append({"role": "user", "content": message["text"]})
+    return history, gr.MultimodalTextbox(value=None, interactive=False)
 
-                    .chat-container {
-                        display: flex;
-                        flex-direction: column;
-                        flex: 1;
-                        height: 100%;
-                        max-height: 600px; /* Limit overall height */
-                    }
+def bot(history: list):
+    global llm
+    response = answer_generation_using_message(llm,history)
+    print(history)
+    history.append({"role": "assistant", "content": ""})
+    for character in response:
+        history[-1]["content"] += character
+        time.sleep(0.001)
+        yield history
 
-                    .chatbox {
-                        flex-grow: 1; /* Fill remaining space in parent container */
-                        overflow-y: auto; /* Add scroll support */
-                        border: 1px solid #ccc;
-                        padding: 10px;
-                        border-radius: 5px;
-                    }
-                    """) as app:
-        gr.Markdown("# Chat Application")
 
-        # Layout with two columns
-        with gr.Row(elem_classes="equal-height"):  # Use the equal-height class to ensure equal height for both columns
-            # Left column: Chat functionality
-            with gr.Column(elem_classes="column", scale=3):  # Left column occupies a larger proportion
-                gr.Markdown("### Chat Interface")
-                chat_box = gr.Chatbot(elem_classes="chatbox")  # Chat history box
-                user_input = gr.Textbox(label="Your message")
-                send_button = gr.Button("Send")
-                # Trigger chat functionality with button click or Enter key
-                send_button.click(
-                    chatbot,
-                    inputs=[user_input],
-                    outputs=[chat_box, user_input],  # Update chatbox and clear input box simultaneously
-                )
-                user_input.submit(
-                    chatbot,
-                    inputs=[user_input],
-                    outputs=[chat_box, user_input],  # Support sending message with Enter key
-                )
+with gr.Blocks() as demo:
+    gr.Markdown("# Local Mind Chatbot")
+    # Model Settings
+    gr.Markdown("### Model Setting")
+    with gr.Row():
+        temperature_slider = gr.Slider(
+            minimum=0.0, maximum=1.0, value=0.7, step=0.1, label="Temperature", scale=1
+        )
+        max_tokens_slider = gr.Slider(
+            minimum=64, maximum=8196, value=1024, step=64, label="Max Tokens", scale=1
+        )
+        model_dropdown = gr.Dropdown(
+            choices=get_ollama_models(),
+            value=get_ollama_models()[0] if get_ollama_models() else "",
+            label="Model",
+            scale=1
+        )
 
-            # Right column: Settings and file upload
-            with gr.Column(elem_classes="column", scale=1):  # Right column occupies a smaller proportion
-                gr.Markdown("### Settings")
-                temperature = gr.Slider(0, 1, step=0.1, value=model_settings['temperature'], label="Temperature")
-                max_tokens = gr.Slider(50, 200, step=10, value=model_settings['max_tokens'], label="Max Tokens")
-                model_dropdown = gr.Dropdown(
-                    choices=get_ollama_models() or ["No models available"],  # Dynamically fetch model list
-                    label="Select Model",
-                    value=get_ollama_models()[0],  # Default selected model
-                )
-                update_button = gr.Button("Update Settings")
-                status = gr.Textbox(label="Status", interactive=False)
+        apply_button = gr.Button("Apply Settings",scale=1)
+        
+    
+    llm = initialize_llm(model_dropdown.value, temperature_slider.value, max_tokens_slider.value)
 
-                # Update settings button
-                update_button.click(
-                    update_settings,
-                    inputs=[temperature, max_tokens, model_dropdown],
-                    outputs=status,
-                )
 
-                gr.Markdown("### File Upload")
-                file_upload = gr.File(label="Upload your file")
-                file_status = gr.Textbox(label="Upload Status", interactive=False)
-                file_upload.upload(handle_file, inputs=file_upload, outputs=file_status)
-    return app 
+    chatbot = gr.Chatbot(elem_id="chatbot", bubble_full_width=False, type="messages")
 
-if __name__ == "__main__":
-    app = create_gradio_interface()
-    app.launch()
+    chat_input = gr.MultimodalTextbox(
+        interactive=True,
+        file_count="multiple",
+        placeholder="Enter message or upload file...",
+        show_label=False,
+    )
+
+    chat_msg = chat_input.submit(
+        add_message, [chatbot, chat_input], [chatbot, chat_input]
+    )
+
+    bot_msg = chat_msg.then(
+        bot,
+        inputs=[chatbot],
+        outputs=chatbot,
+        api_name="bot_response",
+    )
+
+    bot_msg.then(lambda: gr.MultimodalTextbox(interactive=True), None, [chat_input])
+
+    chatbot.like(print_like_dislike, None, None, like_user_message=True)
+
+    apply_button.click(apply_settings, 
+                    [temperature_slider, max_tokens_slider, model_dropdown], 
+                    [apply_button]).then(
+        lambda: reset_button_text("Apply Settings"),
+        None,
+        [apply_button])
+
+demo.launch()

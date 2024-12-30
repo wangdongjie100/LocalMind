@@ -32,4 +32,3 @@ def answer_generation_using_file_and_message(llm, context, message):
     prompt_formatted = prompt.format(context=context,question=message)
     generation = llm.invoke([HumanMessage(content=prompt_formatted)])
     return generation
-
